@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './SignUp.css';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 function SignUp() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     username: '',
     fullName: '',
@@ -13,12 +15,16 @@ function SignUp() {
   });
 
   const [imagePreview, setImagePreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
+    setError(''); // Clear error when user types
   };
 
   const handleImageChange = (e) => {
@@ -38,21 +44,76 @@ function SignUp() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Clear previous messages
+    setError('');
+    setSuccess('');
+    
+    // Validate passwords match
     if (formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match!');
+      setError('Passwords do not match!');
       return;
     }
 
-    console.log('Sign Up Data:', {
-      username: formData.username,
-      fullName: formData.fullName,
-      password: formData.password,
-      image: formData.image // This is in base64 format
-    });
-    // Add your sign up logic here
+    // Validate image is selected
+    if (!formData.image) {
+      setError('Please select a profile image');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Prepare data for API
+      const signupData = {
+        username: formData.username,
+        password: formData.password,
+        fullName: formData.fullName,
+        userImage: formData.image // Base64 encoded image
+      };
+
+      // Make API call
+      const response = await fetch('http://localhost:8080/api/users/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(signupData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Store token and user data in localStorage
+        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('userId', data.userId);
+        localStorage.setItem('username', data.username);
+        localStorage.setItem('fullName', data.fullName);
+        localStorage.setItem('sessionId', data.sessionId);
+        if (data.userImage) {
+          localStorage.setItem('userImage', data.userImage);
+        }
+
+        // Success
+        setSuccess('Account created successfully! Redirecting...');
+        console.log('Signup successful:', data);
+        
+        // Redirect to dashboard after 1.5 seconds
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 1500);
+      } else {
+        // Handle error response
+        setError(data.message || 'Signup failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError('Network error. Please check if the server is running and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -62,6 +123,32 @@ function SignUp() {
         <div className="signup-box">
           <h1 className="signup-title">Create Account</h1>
           <p className="signup-subtitle">Join us today! Please fill in the details</p>
+          
+          {error && (
+            <div className="alert alert-error" style={{
+              padding: '10px',
+              marginBottom: '15px',
+              backgroundColor: '#fee',
+              color: '#c33',
+              borderRadius: '5px',
+              border: '1px solid #fcc'
+            }}>
+              {error}
+            </div>
+          )}
+          
+          {success && (
+            <div className="alert alert-success" style={{
+              padding: '10px',
+              marginBottom: '15px',
+              backgroundColor: '#efe',
+              color: '#3c3',
+              borderRadius: '5px',
+              border: '1px solid #cfc'
+            }}>
+              {success}
+            </div>
+          )}
           
           <form className="signup-form" onSubmit={handleSubmit}>
             <div className="form-group">
@@ -154,7 +241,9 @@ function SignUp() {
               </label>
             </div>
 
-            <button type="submit" className="signup-button">Create Account</button>
+            <button type="submit" className="signup-button" disabled={loading}>
+              {loading ? 'Creating Account...' : 'Create Account'}
+            </button>
           </form>
 
           <div className="signup-footer">
