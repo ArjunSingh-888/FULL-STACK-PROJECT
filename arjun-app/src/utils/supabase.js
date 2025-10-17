@@ -152,4 +152,174 @@ export const subscribeToMessages = (chatId, callback) => {
   return subscription;
 };
 
+// Convert file to base64
+export const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      resolve({
+        data: reader.result,
+        name: file.name,
+        type: file.type,
+        size: file.size
+      });
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+// Download file from base64
+export const downloadBase64File = (base64Data, filename) => {
+  const link = document.createElement('a');
+  link.href = base64Data;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// Friend Request Functions
+export const sendFriendRequest = async (senderId, receiverId) => {
+  try {
+    const { data, error } = await supabase
+      .from('requests')
+      .insert([{
+        sender_id: senderId,
+        receiver_id: receiverId,
+        is_approved: null
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { success: true, request: data };
+  } catch (error) {
+    console.error('Send friend request error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const getFriendRequests = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('requests')
+      .select(`
+        request_id,
+        sender_id,
+        receiver_id,
+        created_at,
+        is_approved,
+        responded_at,
+        sender:users!requests_sender_id_fkey(user_id, username, full_name, user_image),
+        receiver:users!requests_receiver_id_fkey(user_id, username, full_name, user_image)
+      `)
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return { success: true, requests: data };
+  } catch (error) {
+    console.error('Get friend requests error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const respondToFriendRequest = async (requestId, isApproved) => {
+  try {
+    const { data, error } = await supabase
+      .from('requests')
+      .update({
+        is_approved: isApproved,
+        responded_at: new Date().toISOString()
+      })
+      .eq('request_id', requestId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { success: true, request: data };
+  } catch (error) {
+    console.error('Respond to friend request error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const getFriends = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('requests')
+      .select(`
+        request_id,
+        sender_id,
+        receiver_id,
+        created_at,
+        sender:users!requests_sender_id_fkey(user_id, username, full_name, user_image),
+        receiver:users!requests_receiver_id_fkey(user_id, username, full_name, user_image)
+      `)
+      .eq('is_approved', true)
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+
+    if (error) throw error;
+    
+    // Map to get the "other" user (friend)
+    const friends = data.map(req => {
+      return req.sender_id === userId ? req.receiver : req.sender;
+    });
+
+    return { success: true, friends };
+  } catch (error) {
+    console.error('Get friends error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const removeFriend = async (userId1, userId2) => {
+  try {
+    const { error } = await supabase
+      .from('requests')
+      .delete()
+      .or(`and(sender_id.eq.${userId1},receiver_id.eq.${userId2}),and(sender_id.eq.${userId2},receiver_id.eq.${userId1})`);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Remove friend error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const checkFriendshipStatus = async (userId1, userId2) => {
+  try {
+    const { data, error } = await supabase
+      .from('requests')
+      .select('request_id, sender_id, receiver_id, is_approved')
+      .or(`and(sender_id.eq.${userId1},receiver_id.eq.${userId2}),and(sender_id.eq.${userId2},receiver_id.eq.${userId1})`)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows returned
+    
+    if (!data) {
+      return { success: true, status: 'none' }; // No request exists
+    }
+
+    if (data.is_approved === null) {
+      return { 
+        success: true, 
+        status: data.sender_id === userId1 ? 'sent' : 'received',
+        requestId: data.request_id 
+      };
+    }
+
+    if (data.is_approved === true) {
+      return { success: true, status: 'friends', requestId: data.request_id };
+    }
+
+    return { success: true, status: 'rejected' };
+  } catch (error) {
+    console.error('Check friendship status error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 export default supabase;

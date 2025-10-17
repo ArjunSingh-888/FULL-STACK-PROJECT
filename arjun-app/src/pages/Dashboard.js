@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 import Sidebar from '../components/Sidebar';
+import { getFriends } from '../utils/supabase';
 
 function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [friendCount, setFriendCount] = useState(0);
 
   useEffect(() => {
     // Check if user is logged in
@@ -42,6 +44,9 @@ function Dashboard() {
             fullName,
             userImage
           });
+          
+          // Load friend count
+          loadFriendCount(userId);
         } else {
           // Token invalid, clear and redirect
           localStorage.clear();
@@ -58,6 +63,13 @@ function Dashboard() {
 
     validateToken();
   }, [navigate]);
+
+  const loadFriendCount = async (userId) => {
+    const result = await getFriends(userId);
+    if (result.success) {
+      setFriendCount(result.friends.length);
+    }
+  };
 
   if (loading) {
     return (
@@ -78,39 +90,6 @@ function Dashboard() {
         </div>
 
         <div className="dashboard-content">
-          <div className="dashboard-cards">
-            <div className="dashboard-card">
-              <div className="card-icon">👥</div>
-              <div className="card-info">
-                <h3>Friends</h3>
-                <p className="card-number">245</p>
-              </div>
-            </div>
-
-            <div className="dashboard-card">
-              <div className="card-icon">📝</div>
-              <div className="card-info">
-                <h3>Posts</h3>
-                <p className="card-number">89</p>
-              </div>
-            </div>
-
-            <div className="dashboard-card">
-              <div className="card-icon">❤️</div>
-              <div className="card-info">
-                <h3>Likes</h3>
-                <p className="card-number">1.2k</p>
-              </div>
-            </div>
-
-            <div className="dashboard-card">
-              <div className="card-icon">💬</div>
-              <div className="card-info">
-                <h3>Messages</h3>
-                <p className="card-number">34</p>
-              </div>
-            </div>
-          </div>
 
           <div className="dashboard-profile-section">
             <h2>Your Profile</h2>

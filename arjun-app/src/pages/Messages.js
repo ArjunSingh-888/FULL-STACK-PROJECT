@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Messages.css';
 import Sidebar from '../components/Sidebar';
+import FilePreview from '../components/FilePreview';
 import { 
   searchUsers, 
   getUserChats, 
   createOrGetChat, 
   getMessages, 
   sendMessage,
-  subscribeToMessages 
+  subscribeToMessages,
+  fileToBase64
 } from '../utils/supabase';
 
 function Messages() {
@@ -23,7 +25,10 @@ function Messages() {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     // Check authentication
@@ -133,20 +138,72 @@ function Messages() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || !selectedChat) return;
+    if ((!newMessage.trim() && selectedFiles.length === 0) || !selectedChat) return;
 
     setSendingMessage(true);
+    
+    // Convert files to base64
+    let filesData = null;
+    if (selectedFiles.length > 0) {
+      setUploadingFiles(true);
+      try {
+        const filesPromises = selectedFiles.map(file => fileToBase64(file));
+        filesData = await Promise.all(filesPromises);
+      } catch (error) {
+        console.error('Error converting files:', error);
+        alert('Failed to upload files. Please try again.');
+        setUploadingFiles(false);
+        setSendingMessage(false);
+        return;
+      }
+      setUploadingFiles(false);
+    }
+
     const result = await sendMessage(
       selectedChat.user_chat_id,
       user.userId,
-      newMessage.trim()
+      newMessage.trim(),
+      filesData ? JSON.stringify(filesData) : null
     );
 
     if (result.success) {
       setNewMessage('');
-      loadMessages(selectedChat.user_chat_id);
+      setSelectedFiles([]);
+      scrollToBottom();
     }
+
     setSendingMessage(false);
+  };
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    
+    // Validate file types
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ];
+    
+    const validFiles = files.filter(file => {
+      if (!allowedTypes.includes(file.type)) {
+        alert(`File type not supported: ${file.name}`);
+        return false;
+      }
+      // Max 10MB per file
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File too large (max 10MB): ${file.name}`);
+        return false;
+      }
+      return true;
+    });
+
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const removeFile = (index) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const formatTime = (timestamp) => {
@@ -283,7 +340,13 @@ function Messages() {
                       className={`message ${msg.sender_id === user.userId ? 'sent' : 'received'}`}
                     >
                       <div className="message-bubble">
-                        <p>{msg.text}</p>
+                        {msg.text && <p>{msg.text}</p>}
+                        {msg.images && (
+                          <FilePreview 
+                            files={msg.images} 
+                            isOwn={msg.sender_id === user.userId}
+                          />
+                        )}
                         <span className="message-time">{formatTime(msg.created_at)}</span>
                       </div>
                     </div>
@@ -294,21 +357,62 @@ function Messages() {
 
               {/* Message Input */}
               <form className="message-input-form" onSubmit={handleSendMessage}>
-                <input
-                  type="text"
-                  placeholder="Type a message..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  className="message-input"
-                  disabled={sendingMessage}
-                />
-                <button 
-                  type="submit" 
-                  className="send-btn"
-                  disabled={sendingMessage || !newMessage.trim()}
-                >
-                  {sendingMessage ? '...' : '📤'}
-                </button>
+                {/* File Previews */}
+                {selectedFiles.length > 0 && (
+                  <div className="selected-files-preview">
+                    {selectedFiles.map((file, index) => (
+                      <div key={index} className="file-preview-item">
+                        <span className="file-icon">
+                          {file.type.startsWith('image/') ? '🖼️' : 
+                           file.type === 'application/pdf' ? '📄' : '📊'}
+                        </span>
+                        <span className="file-name">{file.name}</span>
+                        <button 
+                          type="button"
+                          className="remove-file-btn"
+                          onClick={() => removeFile(index)}
+                        >
+                          ❌
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="input-container">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*,.pdf,.ppt,.pptx"
+                    multiple
+                    style={{ display: 'none' }}
+                  />
+                  <button
+                    type="button"
+                    className="attach-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendingMessage || uploadingFiles}
+                    title="Attach files (images, PDF, PPT)"
+                  >
+                    📎
+                  </button>
+                  <input
+                    type="text"
+                    placeholder="Type a message..."
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    className="message-input"
+                    disabled={sendingMessage || uploadingFiles}
+                  />
+                  <button 
+                    type="submit" 
+                    className="send-btn"
+                    disabled={sendingMessage || uploadingFiles || (!newMessage.trim() && selectedFiles.length === 0)}
+                  >
+                    {uploadingFiles ? '⏳' : sendingMessage ? '...' : '📤'}
+                  </button>
+                </div>
               </form>
             </>
           ) : (

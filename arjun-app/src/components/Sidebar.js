@@ -73,18 +73,6 @@ function Sidebar({ user }) {
           <span className="sidebar-icon">💬</span>
           {!collapsed && <span>Messages</span>}
         </Link>
-        <Link to="/posts" className="sidebar-link">
-          <span className="sidebar-icon">📝</span>
-          {!collapsed && <span>Posts</span>}
-        </Link>
-        <Link to="/notifications" className="sidebar-link">
-          <span className="sidebar-icon">🔔</span>
-          {!collapsed && <span>Notifications</span>}
-        </Link>
-        <Link to="/settings" className="sidebar-link">
-          <span className="sidebar-icon">⚙️</span>
-          {!collapsed && <span>Settings</span>}
-        </Link>
       </nav>
 
       <div className="sidebar-footer">
