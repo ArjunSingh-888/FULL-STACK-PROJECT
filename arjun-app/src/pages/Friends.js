@@ -31,7 +31,7 @@ function Friends() {
   const [allUsers, setAllUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [friendStatuses, setFriendStatuses] = useState({});
 
   useEffect(() => {
@@ -85,7 +85,7 @@ function Friends() {
   };
 
   const loadAllUsers = async (currentUserId) => {
-    setSearching(true);
+    setLoadingUsers(true);
     try {
       const { data, error } = await supabase
         .from('users')
@@ -93,24 +93,33 @@ function Friends() {
         .neq('user_id', currentUserId) // Exclude current user
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
       
-      setAllUsers(data);
-      setSearchResults(data); // Show all users initially
+      console.log('Loaded users:', data); // Debug
+      setAllUsers(data || []);
+      setSearchResults(data || []); // Show all users initially
       
       // Check friendship status for all users
-      const statuses = {};
-      for (const otherUser of data) {
-        const statusResult = await checkFriendshipStatus(currentUserId, otherUser.user_id);
-        if (statusResult.success) {
-          statuses[otherUser.user_id] = statusResult.status;
+      if (data && data.length > 0) {
+        const statuses = {};
+        for (const otherUser of data) {
+          const statusResult = await checkFriendshipStatus(currentUserId, otherUser.user_id);
+          if (statusResult.success) {
+            statuses[otherUser.user_id] = statusResult.status;
+          }
         }
+        setFriendStatuses(statuses);
       }
-      setFriendStatuses(statuses);
     } catch (error) {
       console.error('Load all users error:', error);
+      setAllUsers([]);
+      setSearchResults([]);
+    } finally {
+      setLoadingUsers(false);
     }
-    setSearching(false);
   };
 
   const handleSearch = async (query) => {
@@ -209,7 +218,7 @@ function Friends() {
   if (loading) {
     return (
       <div className="friends-page">
-        <Sidebar />
+        <Sidebar user={user} />
         <div className="friends-loading">
           <div className="spinner"></div>
           <p>Loading...</p>
@@ -220,7 +229,7 @@ function Friends() {
 
   return (
     <div className="friends-page">
-      <Sidebar />
+      <Sidebar user={user} />
       
       <div className="friends-container">
         {/* Header */}
@@ -308,144 +317,179 @@ function Friends() {
           {/* Requests Tab */}
           {activeTab === 'requests' && (
             <div className="requests-container">
-              {/* Pending Requests (Received) */}
-              <div className="requests-section">
-                <h2>Friend Requests ({pendingRequests.length})</h2>
-                {pendingRequests.length === 0 ? (
-                  <div className="empty-state">
-                    <p>No pending friend requests</p>
-                  </div>
-                ) : (
-                  <div className="requests-list">
-                    {pendingRequests.map(request => (
-                      <div key={request.request_id} className="request-card">
-                        <div className="request-avatar">
-                          {request.sender.user_image ? (
-                            <img src={request.sender.user_image} alt={request.sender.username} />
-                          ) : (
-                            <div className="avatar-placeholder">
-                              {request.sender.username.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                        </div>
-                        <div className="request-info">
-                          <h3>{request.sender.full_name}</h3>
-                          <p>@{request.sender.username}</p>
-                          <span className="request-time">
-                            {new Date(request.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="request-actions">
-                          <button 
-                            className="btn-accept"
-                            onClick={() => handleAcceptRequest(request.request_id)}
-                          >
-                            ✓ Accept
-                          </button>
-                          <button 
-                            className="btn-reject"
-                            onClick={() => handleRejectRequest(request.request_id)}
-                          >
-                            ✗ Decline
-                          </button>
-                        </div>
+              {loadingRequests ? (
+                <div className="loading-state">
+                  <div className="spinner"></div>
+                  <p>Loading requests...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Pending Requests (Received) */}
+                  <div className="requests-section">
+                    {/* Header at Top */}
+                    <div className="results-header-top">
+                      <h2>📥 Friend Requests ({pendingRequests.length})</h2>
+                    </div>
+                    
+                    {pendingRequests.length === 0 ? (
+                      <div className="empty-state">
+                        <div className="empty-icon">📭</div>
+                        <h3>No pending friend requests</h3>
+                        <p>Friend requests you receive will appear here</p>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="requests-list">
+                        {pendingRequests.map(request => (
+                          <div key={request.request_id} className="request-card">
+                            <div className="request-avatar">
+                              {request.sender.user_image ? (
+                                <img src={request.sender.user_image} alt={request.sender.username} />
+                              ) : (
+                                <div className="avatar-placeholder">
+                                  {request.sender.username.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="request-info">
+                              <h3>{request.sender.full_name}</h3>
+                              <p>@{request.sender.username}</p>
+                              <span className="request-time">
+                                {new Date(request.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <div className="request-actions">
+                              <button 
+                                className="btn-accept"
+                                onClick={() => handleAcceptRequest(request.request_id)}
+                              >
+                                ✓ Accept
+                              </button>
+                              <button 
+                                className="btn-reject"
+                                onClick={() => handleRejectRequest(request.request_id)}
+                              >
+                                ✗ Decline
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Sent Requests */}
-              <div className="requests-section">
-                <h2>Sent Requests ({sentRequests.length})</h2>
-                {sentRequests.length === 0 ? (
-                  <div className="empty-state">
-                    <p>No sent requests</p>
-                  </div>
-                ) : (
-                  <div className="requests-list">
-                    {sentRequests.map(request => (
-                      <div key={request.request_id} className="request-card">
-                        <div className="request-avatar">
-                          {request.receiver.user_image ? (
-                            <img src={request.receiver.user_image} alt={request.receiver.username} />
-                          ) : (
-                            <div className="avatar-placeholder">
-                              {request.receiver.username.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                        </div>
-                        <div className="request-info">
-                          <h3>{request.receiver.full_name}</h3>
-                          <p>@{request.receiver.username}</p>
-                          <span className="request-time">
-                            Sent on {new Date(request.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="request-status">
-                          <span className="status-pending">⏳ Pending</span>
-                        </div>
+                  {/* Sent Requests */}
+                  <div className="requests-section">
+                    {/* Header at Top */}
+                    <div className="results-header-top">
+                      <h2>📤 Sent Requests ({sentRequests.length})</h2>
+                    </div>
+                    
+                    {sentRequests.length === 0 ? (
+                      <div className="empty-state">
+                        <div className="empty-icon">📤</div>
+                        <h3>No sent requests</h3>
+                        <p>Friend requests you send will appear here</p>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="requests-list">
+                        {sentRequests.map(request => (
+                          <div key={request.request_id} className="request-card">
+                            <div className="request-avatar">
+                              {request.receiver.user_image ? (
+                                <img src={request.receiver.user_image} alt={request.receiver.username} />
+                              ) : (
+                                <div className="avatar-placeholder">
+                                  {request.receiver.username.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="request-info">
+                              <h3>{request.receiver.full_name}</h3>
+                              <p>@{request.receiver.username}</p>
+                              <span className="request-time">
+                                Sent on {new Date(request.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <div className="request-status">
+                              <span className="status-pending">⏳ Pending</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
           )}
 
           {/* Search Tab */}
           {activeTab === 'search' && (
             <div className="search-section">
-              <div className="search-box">
-                <input
-                  type="text"
-                  placeholder="Search by username or name..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    handleSearch(e.target.value);
-                  }}
-                  className="search-input"
-                />
-                <span className="search-icon">🔍</span>
-              </div>
-
-              {searching ? (
+              {loadingUsers ? (
                 <div className="loading-state">
                   <div className="spinner"></div>
-                  <p>Searching...</p>
+                  <p>Loading users...</p>
                 </div>
-              ) : searchResults.length === 0 ? (
+              ) : allUsers.length === 0 ? (
                 <div className="empty-state">
-                  <div className="empty-icon">🔍</div>
-                  <h3>No users found</h3>
-                  <p>Try searching with a different name or username</p>
+                  <div className="empty-icon">👤</div>
+                  <h3>No other users found</h3>
+                  <p>You're the first one here! Invite your friends to join FriendZone.</p>
                 </div>
               ) : (
-                <div className="search-results">
-                  <div className="results-header">
-                    <p>Showing {searchResults.length} user{searchResults.length !== 1 ? 's' : ''}</p>
+                <div className="requests-section">
+                  {/* Header at Top - Same as Requests */}
+                  <div className="results-header-top">
+                    <h2>🔍 Find Friends ({allUsers.length})</h2>
                   </div>
-                  {searchResults.map(result => (
-                    <div key={result.user_id} className="search-result-card">
-                      <div className="result-avatar">
-                        {result.user_image ? (
-                          <img src={result.user_image} alt={result.username} />
-                        ) : (
-                          <div className="avatar-placeholder">
-                            {result.username.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                      <div className="result-info">
-                        <h3>{result.full_name}</h3>
-                        <p>@{result.username}</p>
-                      </div>
-                      <div className="result-action">
-                        {getActionButton(result)}
-                      </div>
+
+                  {/* Search Box - Below Header */}
+                  <div className="search-box">
+                    <input
+                      type="text"
+                      placeholder="Search by username or name..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        handleSearch(e.target.value);
+                      }}
+                      className="search-input"
+                    />
+                    <span className="search-icon">🔍</span>
+                  </div>
+
+                  {/* User List - Below Search */}
+                  {searchResults.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-icon">🔍</div>
+                      <h3>No users found</h3>
+                      <p>Try searching with a different name or username</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="requests-list">
+                      {searchResults.map(result => (
+                        <div key={result.user_id} className="request-card">
+                          <div className="request-avatar">
+                            {result.user_image ? (
+                              <img src={result.user_image} alt={result.username} />
+                            ) : (
+                              <div className="avatar-placeholder">
+                                {result.username.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="request-info">
+                            <h3>{result.full_name}</h3>
+                            <p>@{result.username}</p>
+                          </div>
+                          <div className="result-action">
+                            {getActionButton(result)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
